@@ -1,0 +1,192 @@
+diff --git a/gps-sim.c b/gps-sim.c
+index 8c7ef69..e2a1fb4 100644
+--- a/gps-sim.c
++++ b/gps-sim.c
+@@ -7,7 +7,7 @@
+  *
+  * Copyright © 2021 Mictronics
+  * Distributed under the MIT License.
+- *
++ * DDD	make clean && make all HACKRFSDR=yes PLUTOSDR=yes && cp gps-sim /root/gps-sim
+  */
+ 
+ #include <stdio.h>
+@@ -190,16 +190,16 @@ static void simulator_init(void) {
+     simulator.duration = USER_MOTION_SIZE;
+     simulator.tx_gain = 0;
+     simulator.ppb = 0;
+-    simulator.location.lat = 0;
+-    simulator.location.lon = 0;
+-    simulator.location.height = 0;
++    simulator.location.lat = 46.55903100271158;
++    simulator.location.lon = 15.643202601584857;
++    simulator.location.height = 270;
+     simulator.target.bearing = 0;
+     simulator.target.distance = 0;
+     simulator.target.lat = 0;
+     simulator.target.lon = 0;
+     simulator.target.height = 0;
+     simulator.target.valid = false;
+-    simulator.nav_file_name = NULL;
++    simulator.nav_file_name = "/root/rinex2.gz";
+     simulator.sdr_name = NULL;
+     simulator.pluto_hostname = NULL;
+     simulator.motion_file_name = NULL;
+@@ -221,18 +221,20 @@ static void cleanup_and_exit(int code) {
+     simulator.gps_thread_exit = true;
+     pthread_join(simulator.gps_thread, NULL); /* Wait on GPS read thread exit */
+ 
++    gui_destroy();  //ddd
++
+     pthread_cond_destroy(&simulator.gps_init_done);
+     pthread_mutex_destroy(&simulator.gps_lock);
+ 
+     /* Free when pointing to string in heap (strdup allocated when given as run option) */
+-    free(simulator.nav_file_name);
+-    free(simulator.sdr_name);
+-    free(simulator.pluto_hostname);
+-    free(simulator.pluto_uri);
+-    free(simulator.motion_file_name);
+-    free(simulator.station_id);
++    //free(simulator.nav_file_name);
++    //free(simulator.sdr_name);
++    //free(simulator.pluto_hostname);
++    //free(simulator.pluto_uri);
++    //free(simulator.motion_file_name);
++    //free(simulator.station_id);
+     sdr_close();
+-    gui_destroy();
++   // gui_destroy();
+     fflush(stdout);
+     exit(code);
+ }
+@@ -361,13 +363,13 @@ int main(int argc, char** argv) {
+                     gui_top_panel(KF_FIX);
+                     break;
+                 case LEFT_KEY:
+-                    simulator.target.bearing -= 127.0;
++                    simulator.target.bearing -= 4572.0;
+                     if (simulator.target.bearing < 0) simulator.target.bearing = 360000.0;
+                     if (simulator.target.bearing > 360000) simulator.target.bearing = 0;
+                     gui_show_heading((float) (simulator.target.bearing / 1000));
+                     break;
+                 case RIGHT_KEY:
+-                    simulator.target.bearing += 127.0;
++                    simulator.target.bearing += 4572.0;
+                     if (simulator.target.bearing < 0) simulator.target.bearing = 360000.0;
+                     if (simulator.target.bearing > 360000) simulator.target.bearing = 0;
+                     gui_show_heading((float) (simulator.target.bearing / 1000));
+@@ -381,12 +383,12 @@ int main(int argc, char** argv) {
+                     gui_show_vertical_speed((float) simulator.target.vertical_speed);
+                     break;
+                 case UPSPEED_KEY:
+-                    simulator.target.speed += 1.0;
++                    simulator.target.speed += 10.0;
+                     simulator.target.velocity = simulator.target.speed / 100.0;
+                     gui_show_speed((float) (simulator.target.velocity * 3.6));
+                     break;
+                 case DOWNSPEED_KEY:
+-                    simulator.target.speed -= 1.0;
++                    simulator.target.speed -= 10.0;
+                     if (simulator.target.speed < 0) simulator.target.speed = 0;
+                     simulator.target.velocity = simulator.target.speed / 100.0;
+                     gui_show_speed((float) (simulator.target.velocity * 3.6));
+diff --git a/gps.c b/gps.c
+index 2d85068..a8ecd37 100644
+--- a/gps.c
++++ b/gps.c
+@@ -2076,7 +2076,9 @@ void generateNavMsg(gpstime_t g, channel_t *chan, int init) {
+     chan->g0 = g0; // Data bit reference time
+ 
+     wn = (unsigned long) (g0.week % 1024);
+-    tow = ((unsigned long) g0.sec) / 6UL;
++    // ddd tow = ((unsigned long) g0.sec) / 6UL;
++    tow = (((unsigned long) g0.sec) / 6UL) % 100800UL;
++
+ 
+     // Initialize the subframe 5
+     if (init == 1) {
+@@ -2106,7 +2108,9 @@ void generateNavMsg(gpstime_t g, channel_t *chan, int init) {
+ 
+     // Generate subframe words
+     for (isbf = 0; isbf < N_SBF; isbf++) {
+-        tow++;
++        // ddd tow++;
++	tow = (tow + 1) % 100800UL;
++
+ 
+         for (iwrd = 0; iwrd < N_DWRD_SBF; iwrd++) {
+             if (isbf < 3) // Subframes 1-3
+@@ -2765,8 +2769,14 @@ void *gps_thread_ep(void *arg) {
+         }
+ 
+         for (isamp = 0; isamp < NUM_IQ_SAMPLES; isamp++) {
+-            int i_acc = 0.0f;
+-            int q_acc = 0.0f;
++            //int i_acc = 0.0f;
++            //int q_acc = 0.0f;
++	    int i_acc = 0;
++	    int q_acc = 0;
++
++
++
++
+ 
+             for (i = 0; i < MAX_CHAN; i++) {
+                 if (chan[i].prn > 0) {
+@@ -2776,6 +2786,16 @@ void *gps_thread_ep(void *arg) {
+ #else
+                     iTable = (chan[i].carr_phase >> 16) & 511; // 9-bit index
+ #endif
++/* --- FIX: protect lookup table index --- */
++if (iTable < 0 || iTable >= 512) {
++    continue;
++}
++
++
++
++
++
++
+                     // dataBit -1 or 1
+                     // codeCA  -1 or 1
+                     ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable] * gain[i];
+@@ -2788,6 +2808,13 @@ void *gps_thread_ep(void *arg) {
+                     // Update code phase
+                     chan[i].code_phase += chan[i].f_code * delt;
+ 
++                    if (!isfinite(chan[i].carr_phase)) {
++			chan[i].carr_phase = 0.0;
++		    }
++
++
++
++
+                     if (chan[i].code_phase >= CA_SEQ_LEN) {
+                         chan[i].code_phase -= CA_SEQ_LEN;
+ 
+diff --git a/gps.h b/gps.h
+index 24c67e5..7a055d2 100644
+--- a/gps.h
++++ b/gps.h
+@@ -33,7 +33,7 @@
+ #define MAX_SAT (32)
+ 
+ /* Maximum number of channels we simulate */
+-#define MAX_CHAN (12)
++#define MAX_CHAN (24)
+ 
+ /* Maximum number of user motion points */
+ #ifndef REAL_TIME_GPS
+diff --git a/gui.c b/gui.c
+index ac35873..3dcdad5 100644
+--- a/gui.c
++++ b/gui.c
+@@ -355,6 +355,7 @@ void gui_destroy(void) {
+     delwin(window[EPHEMERIS]);
+     delwin(window[STATUS]);
+     delwin(window[HELP]);
++    curs_set(1);
+     endwin();
+ }
+ 

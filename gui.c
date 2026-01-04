@@ -355,6 +355,7 @@ void gui_destroy(void) {
     delwin(window[EPHEMERIS]);
     delwin(window[STATUS]);
     delwin(window[HELP]);
+    curs_set(1);
     endwin();
 }
 

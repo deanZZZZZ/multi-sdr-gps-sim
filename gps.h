@@ -33,7 +33,7 @@
 #define MAX_SAT (32)
 
 /* Maximum number of channels we simulate */
-#define MAX_CHAN (12)
+#define MAX_CHAN (24)
 
 /* Maximum number of user motion points */
 #ifndef REAL_TIME_GPS
