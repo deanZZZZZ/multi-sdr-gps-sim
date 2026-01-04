@@ -36,3 +36,8 @@ nbproject/*
 *.sem.txt
 *.yuma
 *.alm
+
+# local notes / backups
+*.org
+*.bak*
+moje_spremembe_*.txt
