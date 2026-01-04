@@ -2076,7 +2076,9 @@ void generateNavMsg(gpstime_t g, channel_t *chan, int init) {
     chan->g0 = g0; // Data bit reference time
 
     wn = (unsigned long) (g0.week % 1024);
-    tow = ((unsigned long) g0.sec) / 6UL;
+    // ddd tow = ((unsigned long) g0.sec) / 6UL;
+    tow = (((unsigned long) g0.sec) / 6UL) % 100800UL;
+
 
     // Initialize the subframe 5
     if (init == 1) {
@@ -2106,7 +2108,9 @@ void generateNavMsg(gpstime_t g, channel_t *chan, int init) {
 
     // Generate subframe words
     for (isbf = 0; isbf < N_SBF; isbf++) {
-        tow++;
+        // ddd tow++;
+	tow = (tow + 1) % 100800UL;
+
 
         for (iwrd = 0; iwrd < N_DWRD_SBF; iwrd++) {
             if (isbf < 3) // Subframes 1-3
@@ -2765,8 +2769,14 @@ void *gps_thread_ep(void *arg) {
         }
 
         for (isamp = 0; isamp < NUM_IQ_SAMPLES; isamp++) {
-            int i_acc = 0.0f;
-            int q_acc = 0.0f;
+            //int i_acc = 0.0f;
+            //int q_acc = 0.0f;
+	    int i_acc = 0;
+	    int q_acc = 0;
+
+
+
+
 
             for (i = 0; i < MAX_CHAN; i++) {
                 if (chan[i].prn > 0) {
@@ -2776,6 +2786,16 @@ void *gps_thread_ep(void *arg) {
 #else
                     iTable = (chan[i].carr_phase >> 16) & 511; // 9-bit index
 #endif
+/* --- FIX: protect lookup table index --- */
+if (iTable < 0 || iTable >= 512) {
+    continue;
+}
+
+
+
+
+
+
                     // dataBit -1 or 1
                     // codeCA  -1 or 1
                     ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable] * gain[i];
@@ -2787,6 +2807,13 @@ void *gps_thread_ep(void *arg) {
 
                     // Update code phase
                     chan[i].code_phase += chan[i].f_code * delt;
+
+                    if (!isfinite(chan[i].carr_phase)) {
+			chan[i].carr_phase = 0.0;
+		    }
+
+
+
 
                     if (chan[i].code_phase >= CA_SEQ_LEN) {
                         chan[i].code_phase -= CA_SEQ_LEN;
